@@ -7,63 +7,103 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from aioauth.requests import Request as AioAuthRequest
 from src.models import User as UserModel
+from pydantic import BaseModel
+import urllib.parse
 
 router = APIRouter()
 
-@router.get("/authorize", response_class=HTMLResponse)
-async def authorize_page(request: Request):
-    # Determine the current state from the query for rendering the form
-    # In a real app, you would render a template
-    return """
-    <html>
-        <body>
-            <form method="POST">
-                <label>Username: <input type="text" name="username"/></label>
-                <label>Password: <input type="password" name="password"/></label>
-                <input type="submit" value="Authorize"/>
-            </form>
-        </body>
-    </html>
-    """
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
-@router.post("/authorize")
-async def authorize(request: Request, db: AsyncSession = Depends(get_db)):
-    form = await request.form()
-    username = form.get("username")
-    password = form.get("password") # In real app, verify hash
-    
-    # Simple user verification
-    stmt = select(UserModel).where(UserModel.username == username)
+@router.post("/api/login")
+async def api_login(data: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    stmt = select(UserModel).where(UserModel.username == data.username)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     
+    if not user or user.password_hash != data.password:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Set session
+    request.session["user_id"] = user.id
+    return {"success": True, "message": "Logged in"}
+
+@router.get("/authorize")
+async def authorize_page(request: Request, db: AsyncSession = Depends(get_db)):
+    user_id = request.session.get("user_id")
+    
+    # 1. If not logged in, redirect to Frontend Login
+    if not user_id:
+        # Construct current URL to pass as 'next'
+        params = dict(request.query_params)
+        next_url = str(request.url)
+        encoded_next = urllib.parse.quote(next_url)
+        frontend_login_url = f"http://localhost:5173/login?next={encoded_next}"
+        return RedirectResponse(frontend_login_url)
+
+    # 2. If logged in, check user validity
+    stmt = select(UserModel).where(UserModel.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
     if not user:
-        # For demo, creating user if not exists or just failing
-        if username:
-            user = UserModel(username=username, password_hash="hash") 
-            db.add(user)
-            await db.commit()
-        else:
-            return HTMLResponse("Invalid credentials", status_code=401)
-            
-    # Create aioauth request
-    # We need to adapt FastAPI request to aioauth request
+        request.session.clear()
+        return RedirectResponse(f"http://localhost:5173/login?next={urllib.parse.quote(str(request.url))}")
+
+    # 3. If logged in, Redirect to Frontend Consent Page
+    # Pass original params to the frontend consent page
+    # Frontend will identify the client and ask user for approval
+    # The Frontend will then POST back to /authorize with confirm=true
+    
+    params = dict(request.query_params)
+    query_string = urllib.parse.urlencode(params)
+    frontend_consent_url = f"http://localhost:5173/consent?{query_string}"
+    return RedirectResponse(frontend_consent_url)
+
+
+@router.post("/authorize")
+async def authorize_confirm(request: Request, db: AsyncSession = Depends(get_db)):
+    # This endpoint is called by the Frontend Consent Page
+    user_id = request.session.get("user_id")
+    if not user_id:
+         raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    stmt = select(UserModel).where(UserModel.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    # Helper to parse form or JSON. Frontend likely sends JSON.
+    try:
+        data = await request.json()
+    except:
+        form = await request.form()
+        data = dict(form)
+    
+    # Transform to AioAuth Request
+    # Note: Query params for OAuth (client_id, etc) should be in the body now 
+    # or passed along?
+    # Standard aioauth expects them in query or body.
+    # We construct aioauth request with the data we received.
+    
     aio_request = AioAuthRequest(
         method=request.method,
-        query=dict(request.query_params),
-        post=dict(form),
+        query=data, # Treat body data as query params for aioauth logic if needed, or put in post
+        post=data,
         headers=dict(request.headers),
-        user=user, # Pass the user object
-        url=str(request.url) 
+        user=user,
+        url=str(request.url)
     )
     
-    # The server.create_authorization_response will handle the logic
-    # It internally calls storage.create_authorization_code if approved
+    # Create authorization response (generates code)
+    # This will check if 'response_type' etc are valid
     response = await server.create_authorization_response(aio_request)
     
+    # If redirect (Code generated), we return the redirect URL to frontend
+    # so frontend can redirect the browser to the Client
     if response.status_code == 302:
-        return RedirectResponse(response.headers["Location"], status_code=302)
+        return {"redirect_to": response.headers["Location"]}
     
+    # If error
     return JSONResponse(content=response.content, status_code=response.status_code)
 
 @router.post("/token")
@@ -82,30 +122,17 @@ async def token(request: Request):
 
 @router.get("/protected")
 async def protected_resource(request: Request):
-    # Validate token
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
     
-    # token = auth_header.split(" ")[1]
-    # In aioauth, we can use server.validate_access_token or similar logic usually,
-    # but for simple verification we rely on the introspection or manual check via storage.
-    
-    # Note: A proper validation involves verifying the access token against the DB and expiry.
-    # aioauth doesn't have a direct 'validate_request' high-level middleware easily accessible 
-    # without instantiating a logic block, so we'll do a quick check via storage or build a dependency.
-    
-    # For this demo, let's manually verify against DB using storage logic logic locally 
-    # or re-use storage method.
-    
-    # We'll need to parse the bearer token
     scheme, _, param = auth_header.partition(" ")
     if scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Invalid token scheme")
         
     token = await server.storage.get_token(request=None, access_token=param)
     
-    if not token or token.revoked: # Check expiry as well
+    if not token or token.revoked:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
         
     return {"message": "Hello, this is a protected resource!", "user_id": token.client_id}

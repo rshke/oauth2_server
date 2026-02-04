@@ -1,32 +1,46 @@
 <script lang="ts">
-    import { onMount } from "svelte";
-
-    // Configuration
-    const CLIENT_ID = "frontend_client";
-    const REDIRECT_URI = "http://localhost:5173/callback";
-    const AUTH_URL = "http://localhost:8000/authorize";
-
-    function login() {
-        const params = new URLSearchParams({
-            response_type: "code",
-            client_id: CLIENT_ID,
-            redirect_uri: REDIRECT_URI,
-            scope: "read",
-            state: "random_state_string",
-        });
-        window.location.href = `${AUTH_URL}?${params.toString()}`;
-    }
+    import { Button } from "$lib/components/ui/button";
+    import {
+        Card,
+        CardContent,
+        CardDescription,
+        CardFooter,
+        CardHeader,
+        CardTitle,
+    } from "$lib/components/ui/card";
+    import Shield from "lucide-svelte/icons/shield";
 </script>
 
-<div class="min-h-screen bg-gray-100 flex flex-col items-center justify-center">
-    <div class="bg-white p-8 rounded shadow-md w-full max-w-md">
-        <h1 class="text-2xl font-bold mb-6 text-center">OAuth2 Client Demo</h1>
-        <p class="mb-4 text-gray-700">Click below to start the OAuth2 flow.</p>
-        <button
-            on:click={login}
-            class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition duration-200"
-        >
-            Login with OAuth2 Server
-        </button>
-    </div>
+<div class="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+    <Card class="w-full max-w-md text-center">
+        <CardHeader>
+            <div
+                class="mx-auto bg-primary/10 p-4 rounded-full w-20 h-20 flex items-center justify-center mb-4"
+            >
+                <Shield class="w-10 h-10 text-primary" />
+            </div>
+            <CardTitle class="text-3xl font-bold">OAuth2 Server</CardTitle>
+            <CardDescription class="text-lg mt-2">
+                Secure, Scalable, and Modern Authentication
+            </CardDescription>
+        </CardHeader>
+        <CardContent>
+            <p class="text-muted-foreground mb-6">
+                A robust OAuth2 provider built with FastAPI and SvelteKit.
+                Managed easily with modern tools.
+            </p>
+        </CardContent>
+        <CardFooter class="flex flex-col gap-4">
+            <Button class="w-full text-lg h-12" href="/login">
+                Get Started
+            </Button>
+            <Button
+                variant="outline"
+                class="w-full"
+                href="http://localhost:8000/docs"
+            >
+                API Documentation
+            </Button>
+        </CardFooter>
+    </Card>
 </div>

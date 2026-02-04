@@ -6,6 +6,7 @@ from src.database import get_db, SessionLocal
 from src.models import Token as TokenModel, Client as ClientModel, AuthorizationCode as CodeModel
 from sqlalchemy import select
 from typing import Optional
+import time
 
 class SQLAlchemyStorage(BaseStorage):
     async def get_client(self, request: Request, client_id: str, client_secret: Optional[str] = None) -> Optional[Client]:
@@ -65,65 +66,42 @@ class SQLAlchemyStorage(BaseStorage):
          # Since I cannot browse, I will assume the standard `create_authorization_code(self, request, client_id, scope, response_type, redirect_uri, code, ...)`
          pass
 
-    async def create_authorization_code(self, request: Request, *args, **kwargs) -> AuthorizationCode:
-        # Extract parameters flexibly to support different aioauth versions
-        code = kwargs.get("code")
-        if not code and args and len(args) > 0:
-            # Heuristic: finding the code in args if strictly positional
-            # Standard signature often has code as one of the last args
-            pass
-            
-        # If code is still None, try to get it from positional args if we knew the index.
-        # But safest is to assume it's in kwargs or named arguments.
-        # For now, let's explicitely look for named arguments that might be passed as kwargs
-        
-        client_id = kwargs.get("client_id")
-        scope = kwargs.get("scope")
-        redirect_uri = kwargs.get("redirect_uri")
-        code_challenge = kwargs.get("code_challenge")
-        code_challenge_method = kwargs.get("code_challenge_method")
-        nonce = kwargs.get("nonce")
-        
-        # If any required field is missing from kwargs, it might be in args.
-        # This is messy. Let's trust that aioauth passes them as kwargs or we matched signature.
-        # The base class signature is:
-        # create_authorization_code(self, request, client_id, scope, response_type, redirect_uri, code_challenge, code_challenge_method, nonce, code, claim_data)
-        
-        # Let's declare the full signature instead of *args, **kwargs to be safe and clearer
-        return await self._create_authorization_code_impl(
-            request, 
-            kwargs.get("client_id"), 
-            kwargs.get("scope"), 
-            kwargs.get("response_type"), 
-            kwargs.get("redirect_uri"), 
-            kwargs.get("code_challenge"), 
-            kwargs.get("code_challenge_method"), 
-            kwargs.get("nonce"), 
-            kwargs.get("code")
-        )
-
-    async def _create_authorization_code_impl(self, request, client_id, scope, response_type, redirect_uri, code_challenge, code_challenge_method, nonce, code):
-         async with SessionLocal() as session:
-            auth_code = CodeModel(
-                code=code,
-                client_id=client_id,
-                redirect_uri=redirect_uri,
-                scope=scope,
-                # auth_time and expires_in need to be determined. 
-                # aioauth usually handles expiration check but we need to store it?
-                # Actually BaseStorage doesn't receive expires_in in create_authorization_code?
-                # It seems we need to set default or use what's passed.
-                # Let's check if 'expires_in' is in kwargs?
-                auth_time=0, 
-                expires_in=600, # Default 10 minutes
-                code_challenge=code_challenge,
-                code_challenge_method=code_challenge_method,
-                nonce=nonce,
-                user_id=request.user.id if request.user else None
-            )
-            session.add(auth_code)
-            await session.commit()
-            return auth_code.to_aioauth_code()
+    async def create_authorization_code(
+        self,
+        *,
+        request: Request,
+        client_id: str,
+        scope: str,
+        response_type: str,
+        redirect_uri: str,
+        code: str,
+        code_challenge_method: Optional[str] = None, # Type alias string
+        code_challenge: Optional[str] = None,
+        nonce: Optional[str] = None,
+    ) -> AuthorizationCode:
+        try:
+            async with SessionLocal() as session:
+                auth_code = CodeModel(
+                    code=code,
+                    client_id=client_id,
+                    redirect_uri=redirect_uri,
+                    scope=scope,
+                    auth_time=int(time.time()),
+                    expires_in=600, 
+                    code_challenge=code_challenge,
+                    code_challenge_method=code_challenge_method,
+                    nonce=nonce,
+                    user_id=request.user.id if request.user else None
+                )
+                session.add(auth_code)
+                await session.commit()
+                return auth_code.to_aioauth_code()
+        except Exception as e:
+            import logging
+            logging.error(f"Error creating auth code: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
+            raise e
 
     async def get_authorization_code(self, request: Request, client_id: str, code: str) -> Optional[AuthorizationCode]:
         async with SessionLocal() as session:

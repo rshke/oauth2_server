@@ -5,6 +5,8 @@ from src.routes import router
 import uvicorn
 import logging
 import traceback
+from starlette.middleware.sessions import SessionMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 
 # Configure basic logging to stdout
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +39,20 @@ async def lifespan(app: FastAPI):
                 )
                 session.add(client)
                 
+            # Seed Demo Client (for the separate Client App)
+            result = await session.execute(select(Client).where(Client.client_id == "demo_client"))
+            demo_client = result.scalar_one_or_none()
+            if not demo_client:
+                demo_client = Client(
+                    client_id="demo_client",
+                    client_secret="demo_secret",
+                    grant_types="authorization_code",
+                    response_types="code",
+                    scope="read",
+                    redirect_uris="http://localhost:3000/callback"
+                )
+                session.add(demo_client)
+                
             # Seed User
             result = await session.execute(select(User).where(User.username == "demo"))
             user = result.scalar_one_or_none()
@@ -56,6 +72,19 @@ async def lifespan(app: FastAPI):
     # Shutdown logic if any can go here
 
 app = FastAPI(lifespan=lifespan)
+
+# Add CORS to allow Frontend to talk to Backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"], # Frontend and Client
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add Session Middleware for Auth Session
+app.add_middleware(SessionMiddleware, secret_key="super_secret_key")
+
 app.include_router(router)
 
 @app.get("/")
