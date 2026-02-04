@@ -1,0 +1,25 @@
+# System
+.DS_Store
+.vscode/
+.idea/
+
+# Python / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+*.sqlite3
+*.db
+backend/.venv/
+backend/.env
+
+# Node / Frontend
+node_modules/
+dist/
+build/
+.output/
+coverage/
+.svelte-kit/
+frontend/node_modules/
+frontend/.svelte-kit/
