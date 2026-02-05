@@ -15,7 +15,7 @@ To recreate this project with the same configuration:
 
 ```sh
 # recreate this project
-npx sv create --template minimal --types ts --no-install frontend
+npx sv create --template minimal --types ts --add tailwindcss="plugins:typography,forms" --install npm frontend
 ```
 
 ## Developing

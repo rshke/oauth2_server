@@ -1,46 +1,49 @@
 <script lang="ts">
     import { Button } from "$lib/components/ui/button";
-    import {
-        Card,
-        CardContent,
-        CardDescription,
-        CardFooter,
-        CardHeader,
-        CardTitle,
-    } from "$lib/components/ui/card";
-    import Shield from "lucide-svelte/icons/shield";
+    import { Label } from "$lib/components/ui/label";
+    import { Input } from "$lib/components/ui/input";
+    import * as Card from "$lib/components/ui/card";
 </script>
 
-<div class="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-    <Card class="w-full max-w-md text-center">
-        <CardHeader>
-            <div
-                class="mx-auto bg-primary/10 p-4 rounded-full w-20 h-20 flex items-center justify-center mb-4"
-            >
-                <Shield class="w-10 h-10 text-primary" />
+s<Card.Root class="-my-4 w-full max-w-sm">
+    <Card.Header>
+        <Card.Title>Login to your account</Card.Title>
+        <Card.Description
+            >Enter your email below to login to your account</Card.Description
+        >
+        <Card.Action>
+            <Button variant="link">Sign Up</Button>
+        </Card.Action>
+    </Card.Header>
+    <Card.Content>
+        <form>
+            <div class="flex flex-col gap-6">
+                <div class="grid gap-2">
+                    <Label for="email">Email</Label>
+                    <Input
+                        id="email"
+                        type="email"
+                        placeholder="m@example.com"
+                        required
+                    />
+                </div>
+                <div class="grid gap-2">
+                    <div class="flex items-center">
+                        <Label for="password">Password</Label>
+                        <a
+                            href="##"
+                            class="ms-auto inline-block text-sm underline-offset-4 hover:underline"
+                        >
+                            Forgot your password?
+                        </a>
+                    </div>
+                    <Input id="password" type="password" required />
+                </div>
             </div>
-            <CardTitle class="text-3xl font-bold">OAuth2 Server</CardTitle>
-            <CardDescription class="text-lg mt-2">
-                Secure, Scalable, and Modern Authentication
-            </CardDescription>
-        </CardHeader>
-        <CardContent>
-            <p class="text-muted-foreground mb-6">
-                A robust OAuth2 provider built with FastAPI and SvelteKit.
-                Managed easily with modern tools.
-            </p>
-        </CardContent>
-        <CardFooter class="flex flex-col gap-4">
-            <Button class="w-full text-lg h-12" href="/login">
-                Get Started
-            </Button>
-            <Button
-                variant="outline"
-                class="w-full"
-                href="http://localhost:8000/docs"
-            >
-                API Documentation
-            </Button>
-        </CardFooter>
-    </Card>
-</div>
+        </form>
+    </Card.Content>
+    <Card.Footer class="flex-col gap-2">
+        <Button type="submit" class="w-full">Login</Button>
+        <Button variant="outline" class="w-full">Login with Google</Button>
+    </Card.Footer>
+</Card.Root>
