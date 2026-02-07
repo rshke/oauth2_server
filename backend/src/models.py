@@ -1,11 +1,8 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
 from src.database import Base
 from aioauth.models import Client as AioAuthClient
 from aioauth.models import Token as AioAuthToken
 from aioauth.models import AuthorizationCode as AioAuthAuthorizationCode
-from aioauth.types import GrantType, ResponseType
-from typing import Optional, List
 
 
 class User(Base):

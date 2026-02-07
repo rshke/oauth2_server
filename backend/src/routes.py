@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from src.oauth import server
-from src.database import get_db, SessionLocal
-from src.models import User, Client
+from src.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from aioauth.requests import Request as AioAuthRequest, Post, Query
@@ -26,20 +25,34 @@ class LoginRequest(BaseModel):
     password: str
 
 
-@router.post("/api/login")
-async def api_login(
-    data: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)
-):
-    stmt = select(UserModel).where(UserModel.username == data.username)
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
+@router.post("/login")
+async def login_page_post(request: Request):
+    form = await request.form()
+    username = form.get("username")
+    password = form.get("password")
+    redirect_uri = request.query_params.get("redirect_uri")  # preserve redirect_uri
 
-    if not user or user.password_hash != data.password:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    async with SessionLocal() as session:
+        from src.auth.service import auth_service
 
-    # Set session
-    request.session["user_id"] = user.id
-    return {"success": True, "message": "Logged in"}
+        # auth_service is now a global instance, we just pass the session for context
+        user = await auth_service.authenticate_user(username, password, session=session)
+
+        if user:
+            request.session["user"] = {"id": user.id, "username": user.username}
+            if redirect_uri:
+                return RedirectResponse(url=redirect_uri, status_code=303)
+            return RedirectResponse(url="/", status_code=303)
+
+        # simple check failed
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "error": "Invalid credentials",
+                "redirect_uri": redirect_uri,
+            },
+        )
 
 
 @router.get("/authorize")
