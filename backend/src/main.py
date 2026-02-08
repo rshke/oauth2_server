@@ -32,7 +32,12 @@ async def lifespan(app: FastAPI):
     # Shutdown logic if any can go here
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="OAuth2 Provider",
+    description="A simple OAuth2 provider implementation",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 # Add CORS to allow Frontend to talk to Backend
 app.add_middleware(

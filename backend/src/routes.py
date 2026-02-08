@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Request, HTTPException
+from typing import Annotated
+from fastapi import APIRouter, Depends, Request, HTTPException, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from src.oauth import server
 from src.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from aioauth.requests import Request as AioAuthRequest, Post, Query
+from aioauth.requests import Request as AioAuthRequest, Post, Query as AioAuthQuery
 from aioauth.config import Settings as AioAuthSettings
 from src.models import User as UserModel
 from pydantic import BaseModel
@@ -26,11 +27,16 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/login")
-async def login_page_post(request: Request):
-    form = await request.form()
-    username = form.get("username")
-    password = form.get("password")
-    redirect_uri = request.query_params.get("redirect_uri")  # preserve redirect_uri
+async def login_page_post(
+    request: Request,
+    username: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    redirect_uri: Annotated[str | None, Query()] = None,
+):
+    # form = await request.form() # No longer needed
+    # username = form.get("username")
+    # password = form.get("password")
+    # redirect_uri = request.query_params.get("redirect_uri")  # preserve redirect_uri
 
     async with SessionLocal() as session:
         from src.auth.service import auth_service
@@ -45,18 +51,30 @@ async def login_page_post(request: Request):
             return RedirectResponse(url="/", status_code=303)
 
         # simple check failed
-        return templates.TemplateResponse(
-            "login.html",
-            {
-                "request": request,
-                "error": "Invalid credentials",
-                "redirect_uri": redirect_uri,
-            },
-        )
+        # Templates are likely missing, return 400 for now or error page if exists
+        # return templates.TemplateResponse(
+        #     "login.html",
+        #     {
+        #         "request": request,
+        #         "error": "Invalid credentials",
+        #         "redirect_uri": redirect_uri,
+        #     },
+        # )
+        return JSONResponse(status_code=401, content={"error": "Invalid credentials"})
 
 
 @router.get("/authorize")
-async def authorize_page(request: Request, db: AsyncSession = Depends(get_db)):
+async def authorize_page(
+    request: Request,
+    response_type: Annotated[str, Query(description="授权类型，例如 'code'")],
+    client_id: Annotated[str, Query(description="客户端 ID")],
+    redirect_uri: Annotated[str, Query(description="重定向 URI")],
+    scope: Annotated[str | None, Query(description="申请的权限范围")] = None,
+    state: Annotated[
+        str | None, Query(description="用于防止 CSRF 攻击的随机字符串")
+    ] = None,
+    db: AsyncSession = Depends(get_db),
+):
     user_id = request.session.get("user_id")
 
     # 1. If not logged in, redirect to Frontend Login
@@ -116,8 +134,8 @@ async def authorize_confirm(request: Request, db: AsyncSession = Depends(get_db)
     # Transform to AioAuth Request
     aio_request = AioAuthRequest(
         method=request.method,
-        query=Query(
-            **_filter_dataclass_data(Query, data)
+        query=AioAuthQuery(
+            **_filter_dataclass_data(AioAuthQuery, data)
         ),  # Treat body data as query params for aioauth logic if needed
         post=Post(**_filter_dataclass_data(Post, data)),
         headers=dict(request.headers),
@@ -140,19 +158,60 @@ async def authorize_confirm(request: Request, db: AsyncSession = Depends(get_db)
 
 
 @router.post("/token")
-async def token(request: Request):
+async def token(
+    request: Request,
+    grant_type: Annotated[
+        str,
+        Form(
+            description="授权模式，如 'authorization_code', 'password', 'refresh_token'"
+        ),
+    ],
+    code: Annotated[
+        str | None, Form(description="授权码 (仅在 authorization_code 模式下需要)")
+    ] = None,
+    client_id: Annotated[str | None, Form(description="客户端 ID")] = None,
+    client_secret: Annotated[str | None, Form(description="客户端密钥")] = None,
+    redirect_uri: Annotated[str | None, Form(description="重定向 URI")] = None,
+    username: Annotated[
+        str | None, Form(description="用户名 (仅在 password 模式下需要)")
+    ] = None,
+    password: Annotated[
+        str | None, Form(description="密码 (仅在 password 模式下需要)")
+    ] = None,
+    refresh_token: Annotated[
+        str | None, Form(description="刷新令牌 (仅在 refresh_token 模式下需要)")
+    ] = None,
+):
     print("DEBUG: Entering /token endpoint")
-    form = await request.form()
-    form_data = dict(form)
-    print(f"DEBUG: form_data keys: {list(form_data.keys())}")
+    # form = await request.form()
+    # form_data = dict(form)
+    # print(f"DEBUG: form_data keys: {list(form_data.keys())}")
     query_data = dict(request.query_params)
+
+    # Construct form_data from parameters for compatibility if needed or just use params directly
+    # AioAuth expects a dict or similar.
+    # We can reconstruct valid form_data from the args.
+    form_data = {
+        k: v
+        for k, v in {
+            "grant_type": grant_type,
+            "code": code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": redirect_uri,
+            "username": username,
+            "password": password,
+            "refresh_token": refresh_token,
+        }.items()
+        if v is not None
+    }
 
     post_obj = Post(**_filter_dataclass_data(Post, form_data))
     print(f"DEBUG: Created Post object: {post_obj}, type: {type(post_obj)}")
 
     aio_request = AioAuthRequest(
         method=request.method,
-        query=Query(**_filter_dataclass_data(Query, query_data)),
+        query=AioAuthQuery(**_filter_dataclass_data(AioAuthQuery, query_data)),
         post=post_obj,
         headers=dict(request.headers),
         url=str(request.url),
